@@ -68,7 +68,7 @@
 // GPIO direction: receive either output data to specific GPIO pin.
 #define IN  0
 #define OUT 1
- 
+
 // LOW correspong to low level of output signal, HIGH correspond to high level.
 #define LOW  0
 #define HIGH 1
@@ -106,7 +106,7 @@ static void create_error(Error **err, const char* format, ...) {
         va_end(argptr);
     }
 }
- 
+
 static void free_error(Error *err) {
     if (err != NULL) {
         free(err->message);
@@ -143,7 +143,7 @@ static int gpio_export(int port, Pin *pin, Error **err) {
     pin->pin = -1;
     pin->fd_direction = -1;
     pin->fd_value = -1;
-                 
+
     fd = open("/sys/class/gpio/export", O_WRONLY|O_SYNC|O_RSYNC);
     if (-1 == fd) {
         create_error(err, "failed to open GPIO export for writing");
@@ -163,7 +163,7 @@ static int gpio_export(int port, Pin *pin, Error **err) {
     // under the regular user mistake occures frequently !!!
     //
     // Sleep 150 milliseconds
-    // sleep_usec(150*1000);
+    sleep_usec(150*1000);
 
     #define DIRECTION_MAX 35
     char path1[DIRECTION_MAX];
@@ -173,7 +173,7 @@ static int gpio_export(int port, Pin *pin, Error **err) {
         create_error(err, "failed to open pin %d direction for writing", pin->pin);
         return -1;
     }
-                             
+
     #define VALUE_MAX 30
     char path2[VALUE_MAX];
     snprintf(path2, VALUE_MAX, "/sys/class/gpio/gpio%d/value", pin->pin);
@@ -182,7 +182,7 @@ static int gpio_export(int port, Pin *pin, Error **err) {
         create_error(err, "failed to open pin %d value for reading", pin->pin);
         return -1;
     }
-                             
+
     return 0;
 }
 
@@ -203,13 +203,13 @@ static int gpio_unexport(Pin *pin, Error **err) {
         char buffer[BUFFER_MAX];
         ssize_t bytes_written;
         int fd;
-                 
+
         fd = open("/sys/class/gpio/unexport", O_WRONLY|O_SYNC|O_RSYNC);
         if (-1 == fd) {
             create_error(err, "failed to open unexport for writing");
             return -1;
         }
-                         
+
         bytes_written = snprintf(buffer, BUFFER_MAX, "%d", pin->pin);
         if (-1 == write(fd, buffer, bytes_written)) {
             create_error(err, "failed to unexport pin %d", pin->pin);
@@ -221,7 +221,7 @@ static int gpio_unexport(Pin *pin, Error **err) {
     }
     return 0;
 }
- 
+
 // Setup pin mode: input or output.
 static int gpio_direction(Pin *pin, int dir, Error **err) {
     static const char s_directions_str[]  = "in\0out";
@@ -274,7 +274,7 @@ static int gpio_write(Pin *pin, int value, Error **err) {
 
 // Macro to convert timespec structure value to microseconds.
 #define convert_timespec_to_usec(t) ((t).tv_sec*1000*1000 + (t).tv_nsec/1000)
- 
+
 // Read sequence of data from the pin trigering
 // on edge change until timeout occures.
 // Collect as well durations of pulses in microseconds.
@@ -285,7 +285,7 @@ static int gpio_read_seq_until_timeout(Pin *pin,
     int32_t last_v, next_v;
 #define MAX_PULSE_COUNT 16000
     int values[MAX_PULSE_COUNT*2];
-    
+
     last_v = gpio_read(pin, err);
     if (-1 == last_v) {
         create_error(err, "failed to read value");
@@ -308,7 +308,7 @@ static int gpio_read_seq_until_timeout(Pin *pin,
 
         // Check for edge trigger event.
         if (last_v != next_v) {
-            clock_gettime(CLOCK_KIND, &next_t); 
+            clock_gettime(CLOCK_KIND, &next_t);
             i = 0;
             k++;
             if (k > MAX_PULSE_COUNT-1) {
@@ -318,7 +318,7 @@ static int gpio_read_seq_until_timeout(Pin *pin,
             values[k*2] = next_v;
             // Save time duration in microseconds of last edge level.
             values[k*2-1] = convert_timespec_to_usec(next_t) -
-                convert_timespec_to_usec(last_t); 
+                convert_timespec_to_usec(last_t);
             last_v = next_v;
             last_t = next_t;
         }
@@ -342,7 +342,7 @@ static int gpio_read_seq_until_timeout(Pin *pin,
         (*arr)[i*2+1] = values[i*2+1];
     }
     *len = (k+1)*2;
-                                 
+
 /*    fprintf(stdout, "scan %d values\n", k+1);
     for (i=0; i<=k; i++)
     {
@@ -350,8 +350,8 @@ static int gpio_read_seq_until_timeout(Pin *pin,
     }*/
     return 0;
 }
- 
- 
+
+
 #if !defined(__APPLE__) // sched_setscheduler() doesn't defined on Apple devices
 
 // Used to gain maximum performance from device during
@@ -388,7 +388,7 @@ static int set_default_priority(Error **err) {
 // Activate DHTxx sensor and collect data sent by sensor for futher processing.
 static int dial_DHTxx_and_read(int32_t pin, int32_t handshakeDurUsec,
         int32_t boostPerfFlag, int32_t **arr, int32_t *arr_len, Error **err) {
-    
+
     #if !defined(__APPLE__)
         // Set maximum priority for GPIO processing.
         if (boostPerfFlag != FALSE && -1 == set_max_priority(err)) {
@@ -403,7 +403,7 @@ static int dial_DHTxx_and_read(int32_t pin, int32_t handshakeDurUsec,
         gpio_unexport(&p, err);
         #if !defined(__APPLE__)
             set_default_priority(err);
-        #endif            
+        #endif
         return -1;
     }
     // Send dial pulse.
@@ -411,7 +411,7 @@ static int dial_DHTxx_and_read(int32_t pin, int32_t handshakeDurUsec,
         gpio_unexport(&p, err);
         #if !defined(__APPLE__)
             set_default_priority(err);
-        #endif            
+        #endif
         return -1;
     }
     // Set pin to low.
@@ -419,17 +419,17 @@ static int dial_DHTxx_and_read(int32_t pin, int32_t handshakeDurUsec,
         gpio_unexport(&p, err);
         #if !defined(__APPLE__)
             set_default_priority(err);
-        #endif            
+        #endif
         return -1;
     }
     // Sleep N microseconds.
-    sleep_usec(handshakeDurUsec); 
+    sleep_usec(handshakeDurUsec);
     // Set pin to high.
     if (-1 == gpio_write(&p, HIGH, err)) {
         gpio_unexport(&p, err);
         #if !defined(__APPLE__)
             set_default_priority(err);
-        #endif            
+        #endif
         return -1;
     }
     // Switch pin to input mode
@@ -437,7 +437,7 @@ static int dial_DHTxx_and_read(int32_t pin, int32_t handshakeDurUsec,
         gpio_unexport(&p, err);
         #if !defined(__APPLE__)
             set_default_priority(err);
-        #endif            
+        #endif
         return -1;
     }
     // Read bunch of data from sensor
@@ -447,17 +447,17 @@ static int dial_DHTxx_and_read(int32_t pin, int32_t handshakeDurUsec,
         gpio_unexport(&p, err);
         #if !defined(__APPLE__)
             set_default_priority(err);
-        #endif            
+        #endif
         return -1;
     }
     // Release pin.
     if (-1 == gpio_unexport(&p, err)) {
         #if !defined(__APPLE__)
             set_default_priority(err);
-        #endif            
+        #endif
         return -1;
     }
-    
+
     #if !defined(__APPLE__)
         // Return normal thread priority.
         if (boostPerfFlag != FALSE && -1 == set_default_priority(err)) {
