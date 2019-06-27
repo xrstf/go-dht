@@ -169,7 +169,7 @@ func (r *Reader) ReadWithContextAndRetry(parent context.Context, boostPerfFlag b
 					// Interrupt loop, if pending termination.
 					return 0, 0, retried, ctx.Err()
 				// sleep before new attempt according to specification
-				case <-time.After(sensorType.GetRetryTimeout()):
+				case <-time.After(r.sensorType.GetRetryTimeout()):
 					continue
 				}
 			}
@@ -195,8 +195,8 @@ func (r *Reader) dialAndGetResponse(handshakeDur time.Duration, boostPerfFlag bo
 	}
 
 	// return array: [pulse, duration, pulse, duration, ...]
-	r := C.dial_DHTxx_and_read(C.int32_t(pin), hsDurUsec, boost, &arr, &arrLen, &err2)
-	if r == -1 {
+	res := C.dial_DHTxx_and_read(C.int32_t(r.pin), hsDurUsec, boost, &arr, &arrLen, &err2)
+	if res == -1 {
 		var err error
 		if err2 != nil {
 			msg := C.GoString(err2.message)
@@ -301,16 +301,16 @@ func (r *Reader) decodePulses(pulses []Pulse) (float32, float32, error) {
 	// extract temperature and humidity depending on sensor type
 	var temperature, humidity float32
 
-	if sensorType == DHT11 {
+	if r.sensorType == DHT11 {
 		humidity = float32(b0)
 		temperature = float32(b2)
-	} else if sensorType == DHT12 {
+	} else if r.sensorType == DHT12 {
 		humidity = float32(b0) + float32(b1)/10.0
 		temperature = float32(b2) + float32(b3)/10.0
 		if b3&0x80 != 0 {
 			temperature *= -1.0
 		}
-	} else if sensorType == DHT22 {
+	} else if r.sensorType == DHT22 {
 		humidity = (float32(b0)*256 + float32(b1)) / 10.0
 		temperature = (float32(b2&0x7F)*256 + float32(b3)) / 10.0
 		if b2&0x80 != 0 {
