@@ -28,13 +28,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
-	"syscall"
 	"time"
 	"unsafe"
 
-	shell "github.com/d2r2/go-shell"
 	"github.com/sirupsen/logrus"
 )
 
@@ -55,21 +52,36 @@ func NewReader(sensorType SensorType, pin int, logger logrus.FieldLogger) *Reade
 	}
 }
 
-// Read send activation request to DHTxx sensor via specific pin.
-// Then decode pulses sent back with asynchronous
-// protocol specific for DHTxx sensors.
-//
-// Input parameters:
-// 1) sensor type: DHT11, DHT22 (aka AM2302);
-// 2) pin number from GPIO connector to interact with sensor;
-// 3) boost GPIO performance flag should be used for old devices
-// such as Raspberry PI 1 (this will require root privileges).
-//
-// Return:
-// 1) temperature in Celsius;
-// 2) relative humidity in percent;
-// 3) error if present.
-func (r *Reader) Read(boostPerfFlag bool) (float32, float32, error) {
+func (r *Reader) Read(ctx context.Context, boostPerfFlag bool, retry int) (float32, float32, int, error) {
+	retried := 0
+
+	for {
+		temp, hum, err := r.read(boostPerfFlag)
+		if err != nil {
+			if retry > 0 {
+				r.logger.Warning(err)
+				retry--
+				retried++
+
+				select {
+				// check for termination request
+				case <-ctx.Done():
+					// Interrupt loop, if pending termination.
+					return 0, 0, retried, ctx.Err()
+				// sleep before new attempt according to specification
+				case <-time.After(r.sensorType.GetRetryTimeout()):
+					continue
+				}
+			}
+
+			return 0, 0, retried, err
+		}
+
+		return temp, hum, retried, nil
+	}
+}
+
+func (r *Reader) read(boostPerfFlag bool) (float32, float32, error) {
 	// activate sensor and read data to pulses array
 	handshakeDur := r.sensorType.GetHandshakeDuration()
 	pulses, err := r.dialAndGetResponse(handshakeDur, boostPerfFlag)
@@ -93,92 +105,6 @@ func (r *Reader) printPulseArray(pulses []Pulse) {
 	// }
 	// r.logger.Debugf("Pulse count %d:\n%v", len(pulses), buf.String())
 	r.logger.Debugf("Pulses received from DHTxx sensor: %v", pulses)
-}
-
-// ReadWithRetry send activation request to DHTxx sensor via specific pin.
-// Then decode pulses sent back with asynchronous
-// protocol specific for DHTxx sensors. Retry n times in case of failure.
-//
-// Input parameters:
-// 1) sensor type: DHT11, DHT22 (aka AM2302);
-// 2) pin number from gadget GPIO to interact with sensor;
-// 3) boost GPIO performance flag should be used for old devices
-// such as Raspberry PI 1 (this will require root privileges);
-// 4) how many times to retry until success either counter is zeroed.
-//
-// Return:
-// 1) temperature in Celsius;
-// 2) relative humidity in percent;
-// 3) number of extra retries data from sensor;
-// 4) error if present.
-func (r *Reader) ReadWithRetry(boostPerfFlag bool, retry int) (float32, float32, int, error) {
-	// create default context
-	ctx := context.Background()
-
-	// reroute call
-	return r.ReadWithContextAndRetry(ctx, boostPerfFlag, retry)
-}
-
-// ReadWithContextAndRetry send activation request to DHTxx sensor via specific pin.
-// Then decode pulses sent back with asynchronous
-// protocol specific for DHTxx sensors. Retry n times in case of failure.
-//
-// Input parameters:
-// 1) parent context; could be used to manage life-cycle
-//  of sensor request session from code outside;
-// 2) sensor type: DHT11, DHT22 (aka AM2302);
-// 3) pin number from gadget GPIO to interact with sensor;
-// 4) boost GPIO performance flag should be used for old devices
-//  such as Raspberry PI 1 (this will require root privileges);
-// 5) how many times to retry until success either counter is zeroed.
-//
-// Return:
-// 1) temperature in Celsius;
-// 2) relative humidity in percent;
-// 3) number of extra retries data from sensor;
-// 4) error if present.
-func (r *Reader) ReadWithContextAndRetry(parent context.Context, boostPerfFlag bool, retry int) (float32, float32, int, error) {
-	// create context with cancellation possibility
-	ctx, cancel := context.WithCancel(parent)
-
-	// use done channel as a trigger to exit from signal waiting goroutine
-	done := make(chan struct{})
-	defer close(done)
-
-	// build actual signals list to control
-	signals := []os.Signal{os.Kill, os.Interrupt}
-	if shell.IsLinuxMacOSFreeBSD() {
-		signals = append(signals, syscall.SIGTERM)
-	}
-
-	// run goroutine waiting for OS termination events, including keyboard Ctrl+C
-	shell.CloseContextOnSignals(cancel, done, signals...)
-	retried := 0
-
-	for {
-		temp, hum, err := r.Read(boostPerfFlag)
-		if err != nil {
-			if retry > 0 {
-				r.logger.Warning(err)
-				retry--
-				retried++
-
-				select {
-				// check for termination request
-				case <-ctx.Done():
-					// Interrupt loop, if pending termination.
-					return 0, 0, retried, ctx.Err()
-				// sleep before new attempt according to specification
-				case <-time.After(r.sensorType.GetRetryTimeout()):
-					continue
-				}
-			}
-
-			return 0, 0, retried, err
-		}
-
-		return temp, hum, retried, nil
-	}
 }
 
 // Activate sensor and get back bunch of pulses for further decoding.
